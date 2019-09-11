@@ -11,7 +11,17 @@ Task: 1. Напишите функцию, которая будет получа
 package lightfinder
 
 import (
+	"fmt"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	"strings"
+	"time"
+)
+
+const (
+	requestTimeOut = 30 * time.Second
 )
 
 // SearchItem - atomic item for search process
@@ -62,8 +72,90 @@ func (si *SearchItem) ExecQuery() *SearchItem {
 // NewQueryItem - builder of SearchItem
 func NewQueryItem(query, searchbody, resource string) *SearchItem {
 	si := new(SearchItem)
-	si.setQuery(query)
-	si.setSearchArea(searchbody)
+	si.setQuery(strings.ToLower(query))
+	si.setSearchArea(strings.ToLower(searchbody))
 	si.setResourceHref(resource)
 	return si
+}
+
+// SingleQuerySearch - executes simple text search for single query at the many resources.
+func SingleQuerySearch(q string, links []string) (containResources []string) {
+	resources := newResources(links)
+	for _, res := range resources {
+		qi := NewQueryItem(q, res.getContent(), res.string())
+		qi.ExecQuery()
+		if qi.searchResult {
+			containResources = append(containResources, res.string())
+		}
+	}
+	return
+}
+
+// resource - simple structure for implementation of resourceRepo
+type resource string
+
+func newResources(items []string) []resource {
+	resources := make([]resource, len(items))
+	for i, item := range items {
+		resources[i] = resource(item)
+	}
+	return resources
+}
+
+func (r resource) string() string {
+	return string(r)
+}
+
+// getContent - fills content for resource, using http GET request
+func (r resource) getContent() string {
+	// simple validation
+	if r == "" {
+		return ""
+	}
+	bodybts, _, err := httpRequest(r.string())
+	if err != nil {
+		return ""
+	}
+	body, err := ioutil.ReadAll(bodybts)
+	if err != nil {
+		return ""
+	}
+	return string(body)
+}
+
+// httpRequest - common part of http request
+func httpRequest(uri string) (rc io.Reader, httpcode int, err error) {
+	// set http client: timeout of request and switch off redirect
+	c := http.Client{
+		Timeout: requestTimeOut,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	// make encoded url string, for cyrillic symbols and other
+	u, err := url.Parse(uri)
+	if err != nil {
+		return
+	}
+	q := u.Query()
+	u.RawQuery = q.Encode()
+	// make request
+	request, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return
+	}
+	request.Header.Set("Accept", "text/html")
+	request.Header.Set("User-Agent", "SampleGoClient/1.0")
+
+	httpData, err := c.Do(request)
+	if err != nil {
+		return
+	}
+	httpcode = httpData.StatusCode
+	if httpData.StatusCode != http.StatusOK {
+		err = fmt.Errorf("some error at time http.request, request=%s; httpcode=%d", u.String(), httpData.StatusCode)
+		return
+	}
+	rc = httpData.Body
+	return
 }
