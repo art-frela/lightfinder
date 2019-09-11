@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -81,14 +82,29 @@ func NewQueryItem(query, searchbody, resource string) *SearchItem {
 // SingleQuerySearch - executes simple text search for single query at the many resources.
 func SingleQuerySearch(q string, links []string) (containResources []string) {
 	resources := newResources(links)
+	var wg sync.WaitGroup
+	chResults := make(chan string, len(links))
 	for _, res := range resources {
-		qi := NewQueryItem(q, res.getContent(), res.string())
-		qi.ExecQuery()
-		if qi.searchResult {
-			containResources = append(containResources, res.string())
-		}
+		wg.Add(1)
+		go searchSingleResource(q, res.getContent(), res.string(), &wg, chResults)
+	}
+	go func() {
+		wg.Wait()
+		close(chResults)
+	}()
+	for existResource := range chResults {
+		containResources = append(containResources, existResource)
 	}
 	return
+}
+
+func searchSingleResource(query, content, resource string, wg *sync.WaitGroup, out chan<- string) {
+	qi := NewQueryItem(query, content, resource)
+	qi.ExecQuery()
+	if qi.searchResult {
+		out <- resource
+	}
+	wg.Done()
 }
 
 // resource - simple structure for implementation of resourceRepo

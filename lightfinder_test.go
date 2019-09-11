@@ -11,7 +11,16 @@ type testDataItem struct {
 }
 
 var testData = []testDataItem{
-	{"wiki", []string{"https://ru.wikipedia.org/wiki/Вики", "https://www.watcom.ru/", "https://www.rbc.ru/"}, []string{"https://ru.wikipedia.org/wiki/Вики"}},
+	{"wiki", []string{"https://ru.wikipedia.org/wiki/Вики",
+		"https://www.watcom.ru/",
+		"https://www.rbc.ru/",
+		"https://vk.com",
+		"https://google.com",
+		"http://newsvolga.com/",
+		"https://vz.ru/",
+		"http://regions.ru/",
+		"https://news.google.com/?hl=ru&gl=RU&ceid=RU:ru"},
+		[]string{"https://ru.wikipedia.org/wiki/Вики"}},
 	{"система подсчета посетителей", []string{"https://www.watcom.ru/", "https://ya.ru", "https://www.rbc.ru/"}, []string{"https://www.watcom.ru/"}},
 	{"новости", []string{"https://www.watcom.ru/", "https://ya.ru", "https://www.rbc.ru/"}, []string{"https://www.watcom.ru/", "https://ya.ru", "https://www.rbc.ru/"}},
 }
