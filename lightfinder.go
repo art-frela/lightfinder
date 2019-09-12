@@ -25,8 +25,8 @@ const (
 	requestTimeOut = 30 * time.Second
 )
 
-// SearchItem - atomic item for search process
-type SearchItem struct {
+// searchItem - atomic item for search process
+type searchItem struct {
 	query        string
 	searcharea   string
 	resourceHref string
@@ -34,31 +34,31 @@ type SearchItem struct {
 }
 
 // setQuery - set query value
-func (si *SearchItem) setQuery(q string) *SearchItem {
+func (si *searchItem) setQuery(q string) *searchItem {
 	si.query = q
 	return si
 }
 
 // setSearchArea - set searcharea value
-func (si *SearchItem) setSearchArea(body string) *SearchItem {
+func (si *searchItem) setSearchArea(body string) *searchItem {
 	si.searcharea = body
 	return si
 }
 
 // setResourceHref - set resourceHref value
-func (si *SearchItem) setResourceHref(url string) *SearchItem {
+func (si *searchItem) setResourceHref(url string) *searchItem {
 	si.resourceHref = url
 	return si
 }
 
 // setSearchResult - set searchResult value
-func (si *SearchItem) setSearchResult(res bool) *SearchItem {
+func (si *searchItem) setSearchResult(res bool) *searchItem {
 	si.searchResult = res
 	return si
 }
 
-// ExecQuery - finds query string in the searchbody and write result
-func (si *SearchItem) ExecQuery() *SearchItem {
+// execQuery - finds query string in the searchbody and write result
+func (si *searchItem) execQuery() *searchItem {
 	// TODO: filter stop word, using https://github.com/bbalet/stopwords
 	// at next time ;-)
 	// this is a simplest check for empty query or searchbody
@@ -70,44 +70,16 @@ func (si *SearchItem) ExecQuery() *SearchItem {
 	return si
 }
 
-// NewQueryItem - builder of SearchItem
-func NewQueryItem(query, searchbody, resource string) *SearchItem {
-	si := new(SearchItem)
+// newQueryItem - builder of searchItem
+func newQueryItem(query, searchbody, resource string) *searchItem {
+	si := new(searchItem)
 	si.setQuery(strings.ToLower(query))
 	si.setSearchArea(strings.ToLower(searchbody))
 	si.setResourceHref(resource)
 	return si
 }
 
-// SingleQuerySearch - executes simple text search for single query at the many resources.
-func SingleQuerySearch(q string, links []string) (containResources []string) {
-	resources := newResources(links)
-	var wg sync.WaitGroup
-	chResults := make(chan string, len(links))
-	for _, res := range resources {
-		wg.Add(1)
-		go searchSingleResource(q, res.getContent(), res.string(), &wg, chResults)
-	}
-	go func() {
-		wg.Wait()
-		close(chResults)
-	}()
-	for existResource := range chResults {
-		containResources = append(containResources, existResource)
-	}
-	return
-}
-
-func searchSingleResource(query, content, resource string, wg *sync.WaitGroup, out chan<- string) {
-	qi := NewQueryItem(query, content, resource)
-	qi.ExecQuery()
-	if qi.searchResult {
-		out <- resource
-	}
-	wg.Done()
-}
-
-// resource - simple structure for implementation of resourceRepo
+// resource - simple structure for customize methods
 type resource string
 
 func newResources(items []string) []resource {
@@ -174,4 +146,33 @@ func httpRequest(uri string) (rc io.Reader, httpcode int, err error) {
 	}
 	rc = httpData.Body
 	return
+}
+
+// SingleQuerySearch - executes simple text search for single query at the many resources
+func SingleQuerySearch(q string, links []string) (containResources []string) {
+	resources := newResources(links)
+	var wg sync.WaitGroup
+	chResults := make(chan string, len(links))
+	for _, res := range resources {
+		wg.Add(1)
+		go searchSingleResource(q, res.getContent(), res.string(), &wg, chResults)
+	}
+	go func() {
+		wg.Wait()
+		close(chResults)
+	}()
+	for existResource := range chResults {
+		containResources = append(containResources, existResource)
+	}
+	return
+}
+
+// searchSingleResource - worker for search job
+func searchSingleResource(query, content, resource string, wg *sync.WaitGroup, out chan<- string) {
+	qi := newQueryItem(query, content, resource)
+	qi.execQuery()
+	if qi.searchResult {
+		out <- resource
+	}
+	wg.Done()
 }
