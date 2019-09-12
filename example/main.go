@@ -17,7 +17,7 @@ func main() {
 	wwwlist := strings.Split(*list, ";")
 	r := finder.SingleQuerySearch(*query, wwwlist)
 	if len(r) > 0 {
-		fmt.Printf("Text [%s] contains the %d resources\n", *query, len(r))
+		fmt.Printf("Text [%s] contains %d resources\n", *query, len(r))
 		for i, ir := range r {
 			fmt.Println("\t", i+1, ir)
 		}
