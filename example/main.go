@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"strings"
 
 	finder "github.com/art-frela/lightfinder"
@@ -15,7 +16,12 @@ func main() {
 	flag.Parse()
 	// split list to slice of links
 	wwwlist := strings.Split(*list, ";")
-	r := finder.SingleQuerySearch(*query, wwwlist)
+	sq := finder.NewSingleQuery(*query, wwwlist)
+	r, err := sq.QuerySearch()
+	if err != nil {
+		log.Println("search error", err)
+		return
+	}
 	if len(r) > 0 {
 		fmt.Printf("Text [%s] contains %d resources\n", *query, len(r))
 		for i, ir := range r {

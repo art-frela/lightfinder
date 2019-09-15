@@ -11,6 +11,7 @@ Task: 1. Напишите функцию, которая будет получа
 package lightfinder
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -31,30 +32,7 @@ type searchItem struct {
 	searcharea   string
 	resourceHref string
 	searchResult bool
-}
-
-// setQuery - set query value
-func (si *searchItem) setQuery(q string) *searchItem {
-	si.query = q
-	return si
-}
-
-// setSearchArea - set searcharea value
-func (si *searchItem) setSearchArea(body string) *searchItem {
-	si.searcharea = body
-	return si
-}
-
-// setResourceHref - set resourceHref value
-func (si *searchItem) setResourceHref(url string) *searchItem {
-	si.resourceHref = url
-	return si
-}
-
-// setSearchResult - set searchResult value
-func (si *searchItem) setSearchResult(res bool) *searchItem {
-	si.searchResult = res
-	return si
+	err          error
 }
 
 // execQuery - finds query string in the searchbody and write result
@@ -64,24 +42,52 @@ func (si *searchItem) execQuery() *searchItem {
 	// this is a simplest check for empty query or searchbody
 	if si.query == "" || si.searcharea == "" {
 		si.searchResult = false
+		si.err = fmt.Errorf("empty query [%s] or searcharea [does not print, too much words], these must be filled", si.query)
 		return si
 	}
-	si.setSearchResult(strings.Contains(si.searcharea, si.query))
+	si.searchResult = strings.Contains(si.searcharea, si.query)
 	return si
 }
 
-// newQueryItem - builder of searchItem
-func newQueryItem(query, searchbody, resource string) *searchItem {
-	si := new(searchItem)
-	si.setQuery(strings.ToLower(query))
-	si.setSearchArea(strings.ToLower(searchbody))
-	si.setResourceHref(resource)
-	return si
+// newSearchItem - builder of searchItem
+func newSearchItem(query, searchbody, resource string) *searchItem {
+	si := searchItem{
+		query:        strings.ToLower(query),
+		searcharea:   strings.ToLower(searchbody),
+		resourceHref: resource,
+	}
+	return &si
 }
 
 // resource - simple structure for customize methods
 type resource string
 
+func (r resource) string() string {
+	return string(r)
+}
+
+// getContent - fills content for resource, using http GET request
+func (r resource) getContent() (string, error) {
+	// simple validation
+	if r == "" {
+		err := fmt.Errorf("Empty request string")
+		return "", err
+	}
+	bodybts, _, err := httpRequest(r.string())
+	if err != nil {
+		err = fmt.Errorf("Fail for get content from %s, %v", r.string(), err)
+		return "", err
+	}
+	defer bodybts.Close()
+	body, err := ioutil.ReadAll(bodybts)
+	if err != nil {
+		err = fmt.Errorf("Fail for read body content, from %s, %v", r.string(), err)
+		return "", err
+	}
+	return string(body), nil
+}
+
+// newResources - adapter for slice of string to slice of resource
 func newResources(items []string) []resource {
 	resources := make([]resource, len(items))
 	for i, item := range items {
@@ -90,35 +96,14 @@ func newResources(items []string) []resource {
 	return resources
 }
 
-func (r resource) string() string {
-	return string(r)
-}
-
-// getContent - fills content for resource, using http GET request
-func (r resource) getContent() string {
-	// simple validation
-	if r == "" {
-		return ""
-	}
-	bodybts, _, err := httpRequest(r.string())
-	if err != nil {
-		return ""
-	}
-	body, err := ioutil.ReadAll(bodybts)
-	if err != nil {
-		return ""
-	}
-	return string(body)
-}
-
-// httpRequest - common part of http request
-func httpRequest(uri string) (rc io.Reader, httpcode int, err error) {
+// httpRequest - common part of http request fot html search
+func httpRequest(uri string) (rc io.ReadCloser, httpcode int, err error) {
 	// set http client: timeout of request and switch off redirect
 	c := http.Client{
 		Timeout: requestTimeOut,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+		// CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		// 	return http.ErrUseLastResponse
+		// },
 	}
 	// make encoded url string, for cyrillic symbols and other
 	u, err := url.Parse(uri)
@@ -148,31 +133,106 @@ func httpRequest(uri string) (rc io.Reader, httpcode int, err error) {
 	return
 }
 
-// SingleQuerySearch - executes simple text search for single query at the many resources
-func SingleQuerySearch(q string, links []string) (containResources []string) {
-	resources := newResources(links)
+// SingleQuery - single query for many resources
+type SingleQuery struct {
+	Search string   `json:"search"`
+	Sites  []string `json:"sites"`
+}
+
+// QuerySearch - make search Query text at the Sites and returns Sites which contain Query
+func (sq *SingleQuery) QuerySearch() (containResources []string, err error) {
+	// validate request
+	if len(sq.Sites) == 0 {
+		err = fmt.Errorf("Empty list of resources")
+		return containResources, err
+	}
+	// define resources
+	resources := newResources(sq.Sites)
 	var wg sync.WaitGroup
-	chResults := make(chan string, len(links))
+	chResults := make(chan searchItem, len(sq.Sites))
+	// process seasrch by resources
 	for _, res := range resources {
 		wg.Add(1)
-		go searchSingleResource(q, res.getContent(), res.string(), &wg, chResults)
+		go func(ch chan searchItem, res resource) {
+			content, err := res.getContent()
+			if err != nil {
+				result := searchItem{
+					query:        sq.Search,
+					resourceHref: res.string(),
+					err:          err,
+				}
+				ch <- result
+				wg.Done()
+				return
+			}
+			sq.searchSingleResource(sq.Search, content, res.string(), &wg, ch)
+		}(chResults, res)
+
 	}
 	go func() {
 		wg.Wait()
 		close(chResults)
 	}()
-	for existResource := range chResults {
-		containResources = append(containResources, existResource)
+	var errSearch searchErrors
+	for result := range chResults {
+		//fmt.Printf(">>>GOT RESULT: %s\t%s\t%t\t%v\n", result.query, result.resourceHref, result.searchResult, result.err)
+		if result.err != nil {
+			errSearch.addError(result.resourceHref, result.err)
+			continue
+		}
+		if result.searchResult {
+			containResources = append(containResources, result.resourceHref)
+			continue
+		}
+		er := fmt.Errorf("resource does not contains [%s]", result.query)
+		errSearch.addError(result.resourceHref, er)
+	}
+	if len(containResources) == 0 { // for case when no one resource doesn't containr search string
+		err = fmt.Errorf("Search result error, %s", errSearch.string())
 	}
 	return
 }
 
 // searchSingleResource - worker for search job
-func searchSingleResource(query, content, resource string, wg *sync.WaitGroup, out chan<- string) {
-	qi := newQueryItem(query, content, resource)
+func (sq *SingleQuery) searchSingleResource(query, content, resource string, wg *sync.WaitGroup, out chan<- searchItem) {
+	qi := newSearchItem(query, content, resource)
 	qi.execQuery()
-	if qi.searchResult {
-		out <- resource
-	}
+	out <- *qi
 	wg.Done()
+}
+
+// NewSingleQuery - builder for SingleQuery
+func NewSingleQuery(query string, links []string) *SingleQuery {
+	sq := SingleQuery{
+		Search: query,
+		Sites:  links,
+	}
+	return &sq
+}
+
+// searchItemError - item of search error
+type searchItemError struct {
+	Resource string `json:"resource"`
+	Error    string `json:"error"`
+}
+
+// searchErrors - slice of searchItemError
+type searchErrors []searchItemError
+
+// string - return string representation of search errors
+func (se *searchErrors) string() string {
+	bts, err := json.Marshal(*se)
+	if err != nil {
+		return fmt.Sprintf("%+v", *se)
+	}
+	return string(bts)
+}
+
+// addError - add error string to slice of search errors
+func (se *searchErrors) addError(resource string, err error) {
+	errItem := searchItemError{
+		Resource: resource,
+		Error:    err.Error(),
+	}
+	*se = append(*se, errItem)
 }

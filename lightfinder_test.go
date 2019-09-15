@@ -15,11 +15,15 @@ var testData = []testDataItem{
 		"https://www.watcom.ru/",
 		"https://www.rbc.ru/",
 		"https://vk.com",
-		"https://google.com",
 		"http://newsvolga.com/",
 		"https://vz.ru/",
 		"http://regions.ru/",
-		"https://news.google.com/?hl=ru&gl=RU&ceid=RU:ru",
+		"https://www.watcom.ru/",
+		"https://www.rbc.ru/",
+		"https://vk.com",
+		"http://newsvolga.com/",
+		"https://vz.ru/",
+		"http://regions.ru/",
 		"https://www.watcom.ru/",
 		"https://www.rbc.ru/",
 		"https://vk.com",
@@ -27,7 +31,6 @@ var testData = []testDataItem{
 		"http://newsvolga.com/",
 		"https://vz.ru/",
 		"http://regions.ru/",
-		"https://news.google.com/?hl=ru&gl=RU&ceid=RU:ru",
 		"https://www.watcom.ru/",
 		"https://www.rbc.ru/",
 		"https://vk.com",
@@ -35,15 +38,6 @@ var testData = []testDataItem{
 		"http://newsvolga.com/",
 		"https://vz.ru/",
 		"http://regions.ru/",
-		"https://news.google.com/?hl=ru&gl=RU&ceid=RU:ru",
-		"https://www.watcom.ru/",
-		"https://www.rbc.ru/",
-		"https://vk.com",
-		"https://google.com",
-		"http://newsvolga.com/",
-		"https://vz.ru/",
-		"http://regions.ru/",
-		"https://news.google.com/?hl=ru&gl=RU&ceid=RU:ru",
 		"https://www.apple.com",
 		"https://www.sports.ru/nba/?gr=www",
 		"https://www.zebra.com/ru/ru.html",
@@ -58,7 +52,11 @@ var testData = []testDataItem{
 // TestSingleQuerySearch - testing of SingleQuerySearch
 func TestSingleQuerySearch(t *testing.T) {
 	for _, tItem := range testData {
-		realFind := SingleQuerySearch(tItem.query, tItem.links)
+		sq := NewSingleQuery(tItem.query, tItem.links)
+		realFind, err := sq.QuerySearch()
+		if err != nil {
+			t.Errorf("Can't make test, too much errors, %v", err)
+		}
 		if len(realFind) != len(tItem.results) {
 			t.Errorf("got %v slice of resources, need to %v (query=%s)", realFind, tItem.results, tItem.query)
 		} else {
@@ -81,7 +79,8 @@ func TestSingleQuerySearch(t *testing.T) {
 func BenchmarkSingleQuerySearch(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		for _, tItem := range testData {
-			SingleQuerySearch(tItem.query, tItem.links)
+			sq := NewSingleQuery(tItem.query, tItem.links)
+			sq.QuerySearch()
 		}
 	}
 }
