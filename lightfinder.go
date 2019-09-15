@@ -140,6 +140,7 @@ type SingleQuery struct {
 }
 
 // QuerySearch - make search Query text at the Sites and returns Sites which contain Query
+// If one resource responses httpcode<400 is eq success
 func (sq *SingleQuery) QuerySearch() (containResources []string, err error) {
 	// validate request
 	if len(sq.Sites) == 0 {
@@ -174,12 +175,14 @@ func (sq *SingleQuery) QuerySearch() (containResources []string, err error) {
 		close(chResults)
 	}()
 	var errSearch searchErrors
+	hasSuccessResponse := false
 	for result := range chResults {
 		//fmt.Printf(">>>GOT RESULT: %s\t%s\t%t\t%v\n", result.query, result.resourceHref, result.searchResult, result.err)
 		if result.err != nil {
 			errSearch.addError(result.resourceHref, result.err)
 			continue
 		}
+		hasSuccessResponse = true
 		if result.searchResult {
 			containResources = append(containResources, result.resourceHref)
 			continue
@@ -187,10 +190,10 @@ func (sq *SingleQuery) QuerySearch() (containResources []string, err error) {
 		er := fmt.Errorf("resource does not contains [%s]", result.query)
 		errSearch.addError(result.resourceHref, er)
 	}
-	if len(containResources) == 0 { // for case when no one resource doesn't containr search string
+	if len(containResources) == 0 && !hasSuccessResponse { // for case when no one resource doesn't containr search string
 		err = fmt.Errorf("Search result error, %s", errSearch.string())
 	}
-	return
+	return containResources, nil
 }
 
 // searchSingleResource - worker for search job
